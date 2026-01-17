@@ -62,7 +62,31 @@ def main():
         version = read_variable_ascii(ser, "GETVER", timeout=1.5)
         print("Versione:", version if version else "<nessuna risposta>")
 
+        # --- BATTERIA ASCII (5 byte) ---
+        batt = send_cmd(ser, "GETVOLT", resp_len=5, is_ascii=True)
+        print("Battery:", batt if batt else "<nessuna risposta>")
+
+        # --- SERIAL NUMBER (7 byte) ---
+        raw_ser = send_cmd(ser, "GETSERIAL", resp_len=7)
+        if raw_ser:
+            serial_num = raw_ser.hex().upper()
+            print("Serial:", serial_num)
+        else:
+            print("Serial: nessuna risposta")
+
+        # --- DATETIME (7 byte) ---
+        raw_dt = send_cmd(ser, "GETDATETIME", resp_len=7)
+        if raw_dt:
+            yy, mm, dd, hh, mi, ss, aa = raw_dt
+            print(f"Data/Ora: 20{yy:02d}-{mm:02d}-{dd:02d} {hh:02d}:{mi:02d}:{ss:02d}")
+        else:
+            print("Data/Ora: nessuna risposta")
+
         print("\nInizio lettura continua (Ctrl+C per uscire)...\n")
+
+        # --- BUFFER PER PICCO E MEDIA ---
+        cpm_history = deque(maxlen=WINDOW_SIZE)
+        usvh_history = deque(maxlen=WINDOW_SIZE)
 
         # --- LOOP CONTINUO ---
         while True:
@@ -72,7 +96,21 @@ def main():
                 cpm = struct.unpack(">I", raw_cpm)[0]
                 # µSv/h CALCOLATO
                 usvh = round(cpm / CPM_TO_USVH, 4)
-                print(f"CPM: {cpm} | µSv/h: {usvh}")
+                
+                # Aggiungi ai buffer storici
+                cpm_history.append(cpm)
+                usvh_history.append(usvh)
+                
+                # Calcola minimo, media e massimo
+                cpm_min = min(cpm_history) if cpm_history else 0
+                cpm_avg = round(sum(cpm_history) / len(cpm_history), 2) if cpm_history else 0
+                cpm_max = max(cpm_history) if cpm_history else 0
+                usvh_min = round(min(usvh_history), 4) if usvh_history else 0
+                usvh_avg = round(sum(usvh_history) / len(usvh_history), 4) if usvh_history else 0
+                usvh_max = round(max(usvh_history), 4) if usvh_history else 0
+                
+                print(f"CPM: {cpm:6d} ({cpm_min:6d}, {cpm_avg:6.2f}, {cpm_max:6d}) | "
+                      f"µSv/h: {usvh:.4f} ({usvh_min:.4f}, {usvh_avg:.4f}, {usvh_max:.4f})")
             else:
                 print("CPM: nessuna risposta")
 
