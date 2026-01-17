@@ -59,16 +59,17 @@ def read_variable_ascii(ser, cmd, timeout=1.0):
             break
     return buffer.decode("ascii", errors="ignore").strip()
 
-def on_mqtt_connect(client, userdata, flags, rc):
+def on_mqtt_connect(client, userdata, flags, rc, *args, **kwargs):
     """MQTT connection callback"""
     if rc == 0:
         print("[MQTT] Connected to broker")
     else:
         print(f"[MQTT] Connection error, code: {rc}")
 
-def on_mqtt_disconnect(client, userdata, rc):
+def on_mqtt_disconnect(client, userdata, rc, *args, **kwargs):
     """MQTT disconnection callback"""
-    if rc != 0:
+    # Only print if it's a real error (rc != 0 and not a normal client-initiated disconnect)
+    if rc != 0 and not str(rc).startswith("DisconnectFlags"):
         print(f"[MQTT] Unexpected disconnection, code: {rc}")
 
 def publish_sensor(client, topic, value, min_val, avg_val, max_val):
@@ -83,7 +84,12 @@ def publish_sensor(client, topic, value, min_val, avg_val, max_val):
 
 def main():
     # --- SETUP MQTT ---
-    client = mqtt.Client(client_id=MQTT_CLIENT_ID)
+    # Try VERSION2 first, fallback to default for older paho-mqtt versions
+    try:
+        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=MQTT_CLIENT_ID)
+    except (AttributeError, TypeError):
+        client = mqtt.Client(client_id=MQTT_CLIENT_ID)
+    
     client.on_connect = on_mqtt_connect
     client.on_disconnect = on_mqtt_disconnect
     try:

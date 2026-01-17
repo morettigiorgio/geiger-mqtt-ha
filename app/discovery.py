@@ -19,16 +19,17 @@ DEVICE_NAME = os.getenv("DEVICE_NAME", "Geiger Detector")
 DEVICE_MANUFACTURER = os.getenv("DEVICE_MANUFACTURER", "GQ Electronics")
 DEVICE_MODEL = os.getenv("DEVICE_MODEL", "GMC")
 
-def on_connect(client, userdata, flags, rc):
+def on_connect(client, userdata, flags, rc, *args, **kwargs):
     """MQTT connection callback"""
     if rc == 0:
         print("[Discovery] Connected to MQTT broker")
     else:
         print(f"[Discovery] Connection error, code: {rc}")
 
-def on_disconnect(client, userdata, rc):
+def on_disconnect(client, userdata, rc, *args, **kwargs):
     """MQTT disconnection callback"""
-    if rc != 0:
+    # Only print if it's a real error (rc != 0 and not a normal client-initiated disconnect)
+    if rc != 0 and not str(rc).startswith("DisconnectFlags"):
         print(f"[Discovery] Unexpected disconnection, code: {rc}")
 
 def publish_discovery(client):
@@ -45,7 +46,7 @@ def publish_discovery(client):
     # --- SENSOR CPM ---
     cpm_discovery = {
         "unique_id": f"{DEVICE_ID}_cpm",
-        "device_class": "radiation",
+        "icon": "mdi:radioactive",  # Sostituisce device_class non valida
         "name": "CPM",
         "state_topic": "geiger/cpm",
         "unit_of_measurement": "CPM",
@@ -58,13 +59,13 @@ def publish_discovery(client):
     }
     
     cpm_topic = f"{HA_DISCOVERY_TOPIC_PREFIX}/sensor/{DEVICE_ID}-cpm/config"
-    client.publish(cpm_topic, json.dumps(cpm_discovery, separators=(',', ':')), qos=1, retain=True)
-    print(f"[Discovery] Published CPM discovery to: {cpm_topic}")
+    client.publish(cpm_topic, json.dumps(cpm_discovery), qos=1, retain=True)
+    print(f"[Discovery] Published CPM to: {cpm_topic}")
     
     # --- SENSOR uSv/h ---
     usvh_discovery = {
         "unique_id": f"{DEVICE_ID}_dose_rate",
-        "device_class": "radiation",
+        "icon": "mdi:nuke",
         "name": "Dose Rate",
         "state_topic": "geiger/usvh",
         "unit_of_measurement": "uSv/h",
@@ -77,11 +78,16 @@ def publish_discovery(client):
     }
 
     usvh_topic = f"{HA_DISCOVERY_TOPIC_PREFIX}/sensor/{DEVICE_ID}-dose_rate/config"
-    client.publish(usvh_topic, json.dumps(usvh_discovery, separators=(',', ':')), qos=1, retain=True)
-    print(f"[Discovery] Published Dose Rate discovery to: {usvh_topic}")
+    client.publish(usvh_topic, json.dumps(usvh_discovery), qos=1, retain=True)
+    print(f"[Discovery] Published Dose Rate to: {usvh_topic}")
 
 def main():
-    client = mqtt.Client(client_id=f"{MQTT_CLIENT_ID}-discovery")
+    # Try VERSION2 first, fallback to default for older paho-mqtt versions
+    try:
+        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"{MQTT_CLIENT_ID}-discovery")
+    except (AttributeError, TypeError):
+        client = mqtt.Client(client_id=f"{MQTT_CLIENT_ID}-discovery")
+    
     client.on_connect = on_connect
     client.on_disconnect = on_disconnect
     
