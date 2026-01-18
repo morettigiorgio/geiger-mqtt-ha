@@ -92,6 +92,7 @@ def publish_discovery(client):
         "state_off": "OFF",
         "payload_on": "on",
         "payload_off": "off",
+        "entity_category": "config",
         "device": device_info,
         "platform": "mqtt"
     }
