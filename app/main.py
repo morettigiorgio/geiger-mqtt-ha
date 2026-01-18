@@ -26,22 +26,31 @@ MQTT_TOPIC_CPM = os.getenv("MQTT_TOPIC_CPM", "geiger/cpm")
 MQTT_TOPIC_USVH = os.getenv("MQTT_TOPIC_USVH", "geiger/usvh")
 MQTT_CLIENT_ID = os.getenv("MQTT_CLIENT_ID", "geiger-detector")
 
-def validate_cpm(cpm, last_valid_cpm=None):
+def validate_cpm(cpm, cpm_history):
     """
-    Validate CPM reading against reasonable limits.
-    Returns (is_valid, cpm)
+    Validate CPM reading against:
+    1. Absolute limits (MAX_CPM)
+    2. Statistical outliers (3-sigma rule based on history)
+    
+    Returns (is_valid, reason)
     """
     # Check absolute maximum
     if cpm < 0 or cpm > MAX_CPM:
-        return False, cpm
+        return False, f"exceeds absolute limit ({MAX_CPM})"
     
-    # Check rate of change (if we have a previous valid reading)
-    if last_valid_cpm is not None and last_valid_cpm > 0:
-        ratio = cpm / last_valid_cpm
-        if ratio > MAX_CPM_JUMP or ratio < (1.0 / MAX_CPM_JUMP):
-            return False, cpm
+    # Check statistical outliers if we have history
+    if len(cpm_history) > 2:
+        mean = sum(cpm_history) / len(cpm_history)
+        variance = sum((x - mean) ** 2 for x in cpm_history) / len(cpm_history)
+        std_dev = variance ** 0.5
+        
+        # 3-sigma rule: reject values beyond 3 standard deviations
+        if std_dev > 0:
+            z_score = abs(cpm - mean) / std_dev
+            if z_score > 3.0:
+                return False, f"statistical outlier (z={z_score:.2f}, mean={mean:.1f}±{std_dev:.1f})"
     
-    return True, cpm
+    return True, "OK"
 
 def send_cmd(ser, cmd, resp_len=0, is_ascii=False):
     """
@@ -165,7 +174,6 @@ def main():
         # --- BUFFER FOR MIN/AVG/MAX ---
         cpm_history = deque(maxlen=WINDOW_SIZE)
         usvh_history = deque(maxlen=WINDOW_SIZE)
-        last_valid_cpm = None
 
         # --- CONTINUOUS LOOP ---
         while True:
@@ -174,13 +182,11 @@ def main():
             if raw_cpm:
                 cpm = struct.unpack(">I", raw_cpm)[0]
                 
-                # Validate CPM reading
-                is_valid, cpm = validate_cpm(cpm, last_valid_cpm)
+                # Validate CPM reading (before adding to history)
+                is_valid, reason = validate_cpm(cpm, cpm_history)
                 if not is_valid:
-                    print(f"[WARN] Discarded invalid CPM reading: {cpm}")
+                    print(f"[WARN] Rejected CPM {cpm:>10d}: {reason}")
                     continue
-                
-                last_valid_cpm = cpm
                 
                 # Calculate µSv/h
                 usvh = round(cpm / CPM_TO_USVH, 4)
