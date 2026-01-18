@@ -5,6 +5,7 @@ from collections import deque
 import paho.mqtt.client as mqtt
 import json
 import os
+from datetime import datetime
 
 PORT = os.getenv("SERIAL_PORT", "/dev/ttyUSB1")
 BAUDRATE = int(os.getenv("SERIAL_BAUDRATE", "115200"))
@@ -25,6 +26,7 @@ MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "")
 MQTT_TOPIC_CPM = os.getenv("MQTT_TOPIC_CPM", "geiger/cpm")
 MQTT_TOPIC_USVH = os.getenv("MQTT_TOPIC_USVH", "geiger/usvh")
 MQTT_CLIENT_ID = os.getenv("MQTT_CLIENT_ID", "geiger-detector")
+MQTT_PUBLISH_INTERVAL = int(os.getenv("MQTT_PUBLISH_INTERVAL", "1"))  # seconds between MQTT publishes
 
 def validate_cpm(cpm, cpm_history):
     """
@@ -103,12 +105,13 @@ def on_mqtt_disconnect(client, userdata, rc, *args, **kwargs):
         print(f"[MQTT] Unexpected disconnection, code: {rc}")
 
 def publish_sensor(client, topic, value, min_val, avg_val, max_val):
-    """Publish sensor data in JSON format"""
+    """Publish sensor data in JSON format with timestamp"""
     payload = {
         "value": value,
         "min": min_val,
         "avg": avg_val,
-        "max": max_val
+        "max": max_val,
+        "timestamp": datetime.now().isoformat()
     }
     client.publish(topic, json.dumps(payload), qos=1)
 
@@ -174,6 +177,7 @@ def main():
         # --- BUFFER FOR MIN/AVG/MAX ---
         cpm_history = deque(maxlen=WINDOW_SIZE)
         usvh_history = deque(maxlen=WINDOW_SIZE)
+        last_publish_time = 0
 
         # --- CONTINUOUS LOOP ---
         while True:
@@ -186,6 +190,7 @@ def main():
                 is_valid, reason = validate_cpm(cpm, cpm_history)
                 if not is_valid:
                     print(f"[WARN] Rejected CPM {cpm:>10d}: {reason}")
+                    time.sleep(1)
                     continue
                 
                 # Calculate µSv/h
@@ -206,10 +211,12 @@ def main():
                 print(f"CPM: {cpm:6d} ({cpm_min:6d}, {cpm_avg:6.2f}, {cpm_max:6d}) | "
                       f"µSv/h: {usvh:.4f} ({usvh_min:.4f}, {usvh_avg:.4f}, {usvh_max:.4f})")
                 
-                # --- PUBLISH TO MQTT ---
-                if client:
+                # --- PUBLISH TO MQTT (if interval elapsed) ---
+                current_time = time.time()
+                if client and (current_time - last_publish_time) >= MQTT_PUBLISH_INTERVAL:
                     publish_sensor(client, MQTT_TOPIC_CPM, cpm, cpm_min, cpm_avg, cpm_max)
                     publish_sensor(client, MQTT_TOPIC_USVH, usvh, usvh_min, usvh_avg, usvh_max)
+                    last_publish_time = current_time
             else:
                 print("CPM: no response")
 

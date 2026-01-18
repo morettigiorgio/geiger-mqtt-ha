@@ -167,6 +167,7 @@ docker compose down geiger && docker compose up -d geiger
 | `MQTT_TOPIC_CPM` | `geiger/cpm` | Topic for CPM readings |
 | `MQTT_TOPIC_USVH` | `geiger/usvh` | Topic for µSv/h readings |
 | `MQTT_CLIENT_ID` | `geiger-detector` | MQTT client identifier |
+| `MQTT_PUBLISH_INTERVAL` | `1` | Seconds between MQTT publishes (readings are always sampled, but sent at this interval) |
 
 ### Home Assistant Discovery
 
@@ -192,7 +193,8 @@ docker compose down geiger && docker compose up -d geiger
   "value": 42,
   "min": 40,
   "avg": 41.5,
-  "max": 45
+  "max": 45,
+  "timestamp": "2026-01-18T15:30:45.123456"
 }
 ```
 
@@ -203,9 +205,15 @@ docker compose down geiger && docker compose up -d geiger
   "value": 0.2745,
   "min": 0.2614,
   "avg": 0.2713,
-  "max": 0.2941
+  "max": 0.2941,
+  "timestamp": "2026-01-18T15:30:45.123456"
 }
 ```
+
+**Note**: 
+- Readings are sampled every second, but MQTT publishes occur at `MQTT_PUBLISH_INTERVAL` (default 1 second)
+- `timestamp` is ISO8601 format (UTC) - useful for tracking data freshness in Home Assistant
+- Min/avg/max are calculated over `WINDOW_SIZE` samples (default 10)
 
 **Update Frequency**: Every 1 second
 
