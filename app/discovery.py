@@ -80,6 +80,25 @@ def publish_discovery(client):
     usvh_topic = f"{HA_DISCOVERY_TOPIC_PREFIX}/sensor/{DEVICE_ID}-dose_rate/config"
     client.publish(usvh_topic, json.dumps(usvh_discovery), qos=1, retain=True)
     print(f"[Discovery] Published Dose Rate to: {usvh_topic}")
+    
+    # --- SWITCH SPEAKER ---
+    speaker_discovery = {
+        "unique_id": f"{DEVICE_ID}_speaker",
+        "icon": "mdi:volume-high",
+        "name": "Speaker",
+        "state_topic": "geiger/speaker/state",
+        "command_topic": "geiger/speaker/set",
+        "state_on": "ON",
+        "state_off": "OFF",
+        "payload_on": "on",
+        "payload_off": "off",
+        "device": device_info,
+        "platform": "mqtt"
+    }
+    
+    speaker_topic = f"{HA_DISCOVERY_TOPIC_PREFIX}/switch/{DEVICE_ID}-speaker/config"
+    client.publish(speaker_topic, json.dumps(speaker_discovery), qos=1, retain=True)
+    print(f"[Discovery] Published Speaker switch to: {speaker_topic}")
 
 def main():
     # Try VERSION2 first, fallback to default for older paho-mqtt versions

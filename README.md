@@ -166,6 +166,7 @@ docker compose down geiger && docker compose up -d geiger
 | `MQTT_PASSWORD` | `` (empty) | MQTT password (optional) |
 | `MQTT_TOPIC_CPM` | `geiger/cpm` | Topic for CPM readings |
 | `MQTT_TOPIC_USVH` | `geiger/usvh` | Topic for µSv/h readings |
+| `MQTT_TOPIC_SPEAKER` | `geiger/speaker` | Topic for speaker control (set/state) |
 | `MQTT_CLIENT_ID` | `geiger-detector` | MQTT client identifier |
 | `MQTT_PUBLISH_INTERVAL` | `1` | Seconds between MQTT publishes (readings are always sampled, but sent at this interval) |
 
@@ -215,7 +216,21 @@ docker compose down geiger && docker compose up -d geiger
 - `timestamp` is ISO8601 format (UTC) - useful for tracking data freshness in Home Assistant
 - Min/avg/max are calculated over `WINDOW_SIZE` samples (default 10)
 
-**Update Frequency**: Every 1 second
+### Speaker Control (geiger/speaker)
+
+**Command topic** (`geiger/speaker/set`):
+```
+Publish: "on" or "off"
+```
+
+**State topic** (`geiger/speaker/state`):
+```json
+{
+  "state": "ON"
+}
+```
+
+**Note**: Speaker control uses RFC1801 commands `SPEAKER1` (on) and `SPEAKER0` (off). Response should be `0xAA`.
 
 ## Home Assistant Integration
 
@@ -225,6 +240,7 @@ The container publishes Home Assistant MQTT Discovery messages on startup:
 
 - **CPM Sensor**: `homeassistant/sensor/geiger-detector-cpm/config`
 - **Dose Rate Sensor**: `homeassistant/sensor/geiger-detector-dose_rate/config`
+- **Speaker Switch**: `homeassistant/switch/geiger-detector-speaker/config`
 
 ![Home Assistant Integration](screenshots/Screenshot%202026-01-17%20231007.png)
 

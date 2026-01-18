@@ -27,6 +27,7 @@ MQTT_TOPIC_CPM = os.getenv("MQTT_TOPIC_CPM", "geiger/cpm")
 MQTT_TOPIC_USVH = os.getenv("MQTT_TOPIC_USVH", "geiger/usvh")
 MQTT_CLIENT_ID = os.getenv("MQTT_CLIENT_ID", "geiger-detector")
 MQTT_PUBLISH_INTERVAL = int(os.getenv("MQTT_PUBLISH_INTERVAL", "1"))  # seconds between MQTT publishes
+MQTT_TOPIC_SPEAKER = os.getenv("MQTT_TOPIC_SPEAKER", "geiger/speaker")  # Topic for speaker control (set/state)
 
 def validate_cpm(cpm, cpm_history):
     """
@@ -115,6 +116,40 @@ def publish_sensor(client, topic, value, min_val, avg_val, max_val):
     }
     client.publish(topic, json.dumps(payload), qos=1)
 
+def set_speaker(ser, enabled):
+    """
+    Control speaker via RFC1801 protocol
+    Returns True if successful (0xAA response)
+    """
+    cmd = "SPEAKER1" if enabled else "SPEAKER0"
+    response = send_cmd(ser, cmd, resp_len=1)
+    if response and response[0] == 0xAA:
+        state_str = "ON" if enabled else "OFF"
+        print(f"[Speaker] Set to {state_str}")
+        return True
+    else:
+        print(f"[Speaker] Failed to set speaker (no response)")
+        return False
+
+def on_mqtt_message(client, userdata, msg):
+    """Handle incoming MQTT messages (speaker control)"""
+    if msg.topic == f"{MQTT_TOPIC_SPEAKER}/set":
+        payload = msg.payload.decode().lower()
+        if payload in ["on", "1", "true"]:
+            userdata["speaker_state"] = set_speaker(userdata["serial"], True)
+        elif payload in ["off", "0", "false"]:
+            userdata["speaker_state"] = set_speaker(userdata["serial"], False)
+        
+        # Publish state back with retain flag
+        state_payload = json.dumps({"state": "ON" if userdata.get("speaker_state", False) else "OFF"})
+        client.publish(f"{MQTT_TOPIC_SPEAKER}/state", state_payload, qos=1, retain=True)
+
+def publish_speaker_state(client, state):
+    """Publish speaker state with retain flag"""
+    state_payload = "ON" if state else "OFF"
+    client.publish(f"{MQTT_TOPIC_SPEAKER}/state", state_payload, qos=1, retain=True)
+    print(f"[Speaker] Published initial state: {state_payload}")
+
 def main():
     # --- SETUP MQTT ---
     # Try VERSION2 first, fallback to default for older paho-mqtt versions
@@ -125,6 +160,14 @@ def main():
     
     client.on_connect = on_mqtt_connect
     client.on_disconnect = on_mqtt_disconnect
+    client.on_message = on_mqtt_message
+    
+    # Prepare userdata for callbacks
+    client.user_data_set({
+        "serial": None,
+        "speaker_state": False
+    })
+    
     try:
         # Configure credentials if provided
         if MQTT_USER and MQTT_PASSWORD:
@@ -140,6 +183,18 @@ def main():
 
     # --- SETUP SERIAL ---
     ser = serial.Serial(PORT, BAUDRATE, timeout=TIMEOUT)
+    
+    # Store serial connection in userdata for callbacks
+    if client:
+        client.user_data_set({
+            "serial": ser,
+            "speaker_state": False
+        })
+    
+    # Subscribe to speaker control topic
+    if client:
+        client.subscribe(f"{MQTT_TOPIC_SPEAKER}/set")
+    
     try:
         print(f"Connected to {PORT} @ {BAUDRATE}")
         time.sleep(0.5)
@@ -171,6 +226,11 @@ def main():
             print(f"DateTime: 20{yy:02d}-{mm:02d}-{dd:02d} {hh:02d}:{mi:02d}:{ss:02d}")
         else:
             print("DateTime: no response")
+
+        # --- PUBLISH INITIAL SPEAKER STATE ---
+        if client:
+            publish_speaker_state(client, False)  # Default to OFF
+            time.sleep(0.5)
 
         print("\nStarting continuous reading (Ctrl+C to exit)...\n")
 
