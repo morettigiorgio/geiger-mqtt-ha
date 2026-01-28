@@ -36,6 +36,23 @@ geiger/
 - Network access to MQTT broker
 - Docker host with USB passthrough capability
 
+This software has been developed and extensively tested using a **GQ GMC-500+** Geiger counter connected via USB cable.
+
+## Connectivity & Protocol
+* **Protocol:** Serial over USB.
+* **Interface:** Standard USB connection.
+
+## Compatibility
+While testing was performed on the GMC-500+, the software is expected to be compatible with most **GQ GMC models**, as they share the standard GQ Electronics serial communication protocol. Supported models include:
+
+* **GMC-300 Series** (e.g., GMC-300, GMC-300E Plus)
+* **GMC-320 Series** (e.g., GMC-320 Plus)
+* **GMC-500 Series** (e.g., GMC-500, GMC-500+)
+* **GMC-600 Series** (e.g., GMC-600, GMC-600+)
+
+---
+*Note: Ensure you have the appropriate USB-to-Serial drivers installed for your operating system to allow the software to communicate with the device.*
+
 ## Building the Container
 
 ### Prerequisites
@@ -192,10 +209,6 @@ docker compose down geiger && docker compose up -d geiger
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DEVICE_ID` | `geiger-detector` | Unique device identifier |
-| `DEVICE_NAME` | `Geiger Detector` | Display name in Home Assistant |
-| `DEVICE_MANUFACTURER` | `GQ Electronics` | Manufacturer name |
-| `DEVICE_MODEL` | `GMC` | Device model name |
 | `LOG_LEVEL` | `INFO` | Logging verbosity (DEBUG, INFO, WARNING, ERROR) |
 
 ## MQTT Topics and Payload
@@ -489,24 +502,6 @@ networks:
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## GitHub Publication
-
-Ready to publish? Follow the steps in [.github-template](.github-template):
-
-```bash
-git init
-git add .
-git commit -m "Initial commit: Geiger detector MQTT integration"
-git branch -M main
-git remote add origin https://github.com/YOUR_USERNAME/geiger-mqtt-ha.git
-git push -u origin main
-```
-
-Recommended repository metadata:
-- **Description**: GQ Electronics GMC Geiger detector MQTT integration with Home Assistant discovery
-- **Topics**: `geiger-detector`, `mqtt`, `home-assistant`, `iot`, `python`
-- **License**: MIT
-
 ## Support
 
 For issues related to:
@@ -514,6 +509,10 @@ For issues related to:
 - **Serial Communication**: Verify USB connection and port permissions
 - **Geiger Readings**: Consult detector manual for calibration and conversion factors
 - **Container Runtime**: Check Docker logs with `docker logs -f geiger_gmc500`
+
+## Note
+
+Much of the code and documentation in this repository is the product of Artificial Intelligence.
 
 ## References
 
