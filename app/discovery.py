@@ -18,6 +18,7 @@ DEVICE_ID = os.getenv("DEVICE_ID", "geiger-detector")
 DEVICE_NAME = os.getenv("DEVICE_NAME", "Geiger Detector")
 DEVICE_MANUFACTURER = os.getenv("DEVICE_MANUFACTURER", "GQ Electronics")
 DEVICE_MODEL = os.getenv("DEVICE_MODEL", "GMC")
+DEVICE_VERSION = os.getenv("DEVICE_VERSION", "-")
 
 def on_connect(client, userdata, flags, rc, *args, **kwargs):
     """MQTT connection callback"""
@@ -39,8 +40,7 @@ def publish_discovery(client):
         "name": DEVICE_NAME,
         "manufacturer": DEVICE_MANUFACTURER,
         "model": DEVICE_MODEL,
-        "hw_version": "1.0",
-        "sw_version": "1.0"
+        "sw_version": DEVICE_VERSION
     }
     
     # --- SENSOR CPM ---

@@ -128,6 +128,7 @@ services:
       DEVICE_NAME: Geiger Detector
       DEVICE_MANUFACTURER: GQ Electronics
       DEVICE_MODEL: GMC-500+
+      DEVICE_VERSION: GMC-500+Re 2.53
 
       # LOG Configuration
       LOG_LEVEL: INFO
@@ -204,6 +205,7 @@ docker compose down geiger && docker compose up -d geiger
 | `DEVICE_NAME` | `Geiger Detector` | Display name in Home Assistant |
 | `DEVICE_MANUFACTURER` | `GQ Electronics` | Manufacturer name |
 | `DEVICE_MODEL` | `GMC` | Device model name |
+| `DEVICE_VERSION` | `-` | Device version |
 
 ### LOG Configuration
 
@@ -268,7 +270,9 @@ The container publishes Home Assistant MQTT Discovery messages on startup:
 - **Dose Rate Sensor**: `homeassistant/sensor/geiger-detector-dose_rate/config`
 - **Speaker Switch**: `homeassistant/switch/geiger-detector-speaker/config`
 
-![Home Assistant Integration](screenshots/Screenshot%202026-01-17%20231007.png)
+![Home Assistant Integration](screenshots/device.png)
+![Home Assistant Integration](screenshots/statistic.png)
+
 
 ### Manual Configuration (if discovery doesn't work)
 
@@ -481,6 +485,7 @@ services:
       DEVICE_NAME: "GMC-500+ Geiger Counter"
       DEVICE_MANUFACTURER: "GQ Electronics"
       DEVICE_MODEL: "GMC-500+Re"
+      DEVICE_VERSION: "GMC-500+Re 2.53"
       LOG_LEVEL: WARNING
     depends_on:
       - mosquitto
