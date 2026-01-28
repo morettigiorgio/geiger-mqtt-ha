@@ -510,6 +510,11 @@ For issues related to:
 - **Geiger Readings**: Consult detector manual for calibration and conversion factors
 - **Container Runtime**: Check Docker logs with `docker logs -f geiger_gmc500`
 
+## Bugs
+
+List of know bugs:
+- **Speaker control**
+
 ## Note
 
 Much of the code and documentation in this repository is the product of Artificial Intelligence.
