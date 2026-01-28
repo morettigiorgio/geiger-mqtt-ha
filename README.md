@@ -513,7 +513,7 @@ For issues related to:
 ## Bugs
 
 List of know bugs:
-- **Speaker control**
+- **nothing known**
 
 ## Note
 
