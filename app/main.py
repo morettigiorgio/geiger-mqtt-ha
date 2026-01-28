@@ -5,7 +5,11 @@ from collections import deque
 import paho.mqtt.client as mqtt
 import json
 import os
+import logging
 from datetime import datetime
+
+loglevel = os.environ.get('LOG_LEVEL', 'INFO').upper()
+logging.basicConfig(level=loglevel, format='%(asctime)s - %(levelname)s - %(message)s')
 
 PORT = os.getenv("SERIAL_PORT", "/dev/ttyUSB1")
 BAUDRATE = int(os.getenv("SERIAL_BAUDRATE", "115200"))
@@ -95,15 +99,15 @@ def read_variable_ascii(ser, cmd, timeout=1.0):
 def on_mqtt_connect(client, userdata, flags, rc, *args, **kwargs):
     """MQTT connection callback"""
     if rc == 0:
-        print("[MQTT] Connected to broker")
+        logging.info("[MQTT] Connected to broker")
     else:
-        print(f"[MQTT] Connection error, code: {rc}")
+        logging.error(f"[MQTT] Connection error, code: {rc}")
 
 def on_mqtt_disconnect(client, userdata, rc, *args, **kwargs):
     """MQTT disconnection callback"""
     # Only print if it's a real error (rc != 0 and not a normal client-initiated disconnect)
     if rc != 0 and not str(rc).startswith("DisconnectFlags"):
-        print(f"[MQTT] Unexpected disconnection, code: {rc}")
+        logging.error(f"[MQTT] Unexpected disconnection, code: {rc}")
 
 def publish_sensor(client, topic, value, min_val, avg_val, max_val):
     """Publish sensor data in JSON format with timestamp"""
@@ -125,10 +129,10 @@ def set_speaker(ser, enabled):
     response = send_cmd(ser, cmd, resp_len=1)
     if response and response[0] == 0xAA:
         state_str = "ON" if enabled else "OFF"
-        print(f"[Speaker] Set to {state_str}")
+        logging.info(f"[Speaker] Set to {state_str}")
         return True
     else:
-        print(f"[Speaker] Failed to set speaker (no response)")
+        logging.error(f"[Speaker] Failed to set speaker (no response)")
         return False
 
 def on_mqtt_message(client, userdata, msg):
@@ -148,7 +152,7 @@ def publish_speaker_state(client, state):
     """Publish speaker state with retain flag"""
     state_payload = "ON" if state else "OFF"
     client.publish(f"{MQTT_TOPIC_SPEAKER}/state", state_payload, qos=1, retain=True)
-    print(f"[Speaker] Published initial state: {state_payload}")
+    logging.info(f"[Speaker] Published initial state: {state_payload}")
 
 def main():
     # --- SETUP MQTT ---
@@ -174,11 +178,11 @@ def main():
             client.username_pw_set(MQTT_USER, MQTT_PASSWORD)
         client.connect(MQTT_BROKER, MQTT_PORT, keepalive=60)
         client.loop_start()
-        print(f"[MQTT] Connecting to {MQTT_BROKER}:{MQTT_PORT}")
+        logging.info(f"[MQTT] Connecting to {MQTT_BROKER}:{MQTT_PORT}")
         if MQTT_USER:
-            print(f"[MQTT] Authenticated as: {MQTT_USER}")
+            logging.info(f"[MQTT] Authenticated as: {MQTT_USER}")
     except Exception as e:
-        print(f"[MQTT] Error: {e}")
+        logging.error(f"[MQTT] Error: {e}")
         client = None
 
     # --- SETUP SERIAL ---
@@ -196,43 +200,43 @@ def main():
         client.subscribe(f"{MQTT_TOPIC_SPEAKER}/set")
     
     try:
-        print(f"Connected to {PORT} @ {BAUDRATE}")
+        logging.info(f"Connected to {PORT} @ {BAUDRATE}")
         time.sleep(0.5)
 
         # --- DISABLE HEARTBEAT ---
-        print("Disabling heartbeat (HEARTBEAT0)")
+        logging.info("Disabling heartbeat (HEARTBEAT0)")
         send_cmd(ser, "HEARTBEAT0")
 
         # --- VERSION ASCII ---
         version = read_variable_ascii(ser, "GETVER", timeout=1.5)
-        print("Version:", version if version else "<no response>")
+        logging.info("Version:", version if version else "<no response>")
 
         # --- BATTERY ASCII (5 bytes) ---
         batt = send_cmd(ser, "GETVOLT", resp_len=5, is_ascii=True)
-        print("Battery:", batt if batt else "<no response>")
+        logging.info("Battery:", batt if batt else "<no response>")
 
         # --- SERIAL NUMBER (7 bytes) ---
         raw_ser = send_cmd(ser, "GETSERIAL", resp_len=7)
         if raw_ser:
             serial_num = raw_ser.hex().upper()
-            print("Serial:", serial_num)
+            logging.info("Serial:", serial_num)
         else:
-            print("Serial: no response")
+            logging.info("Serial: no response")
 
         # --- DATETIME (7 bytes) ---
         raw_dt = send_cmd(ser, "GETDATETIME", resp_len=7)
         if raw_dt:
             yy, mm, dd, hh, mi, ss, aa = raw_dt
-            print(f"DateTime: 20{yy:02d}-{mm:02d}-{dd:02d} {hh:02d}:{mi:02d}:{ss:02d}")
+            logging.info(f"DateTime: 20{yy:02d}-{mm:02d}-{dd:02d} {hh:02d}:{mi:02d}:{ss:02d}")
         else:
-            print("DateTime: no response")
+            logging.info("DateTime: no response")
 
         # --- PUBLISH INITIAL SPEAKER STATE ---
         if client:
             publish_speaker_state(client, False)  # Default to OFF
             time.sleep(0.5)
 
-        print("\nStarting continuous reading (Ctrl+C to exit)...\n")
+        logging.debug("\nStarting continuous reading (Ctrl+C to exit)...\n")
 
         # --- BUFFER FOR MIN/AVG/MAX ---
         cpm_history = deque(maxlen=WINDOW_SIZE)
@@ -249,7 +253,7 @@ def main():
                 # Validate CPM reading (before adding to history)
                 is_valid, reason = validate_cpm(cpm, cpm_history)
                 if not is_valid:
-                    print(f"[WARN] Rejected CPM {cpm:>10d}: {reason}")
+                    logging.warning(f"[WARN] Rejected CPM {cpm:>10d}: {reason}")
                     time.sleep(1)
                     continue
                 
@@ -268,7 +272,7 @@ def main():
                 usvh_avg = round(sum(usvh_history) / len(usvh_history), 4) if usvh_history else 0
                 usvh_max = round(max(usvh_history), 4) if usvh_history else 0
                 
-                print(f"CPM: {cpm:6d} ({cpm_min:6d}, {cpm_avg:6.2f}, {cpm_max:6d}) | "
+                logging.info(f"CPM: {cpm:6d} ({cpm_min:6d}, {cpm_avg:6.2f}, {cpm_max:6d}) | "
                       f"µSv/h: {usvh:.4f} ({usvh_min:.4f}, {usvh_avg:.4f}, {usvh_max:.4f})")
                 
                 # --- PUBLISH TO MQTT (if interval elapsed) ---
@@ -278,19 +282,19 @@ def main():
                     publish_sensor(client, MQTT_TOPIC_USVH, usvh, usvh_min, usvh_avg, usvh_max)
                     last_publish_time = current_time
             else:
-                print("CPM: no response")
+                logging.info("CPM: no response")
 
             time.sleep(1)  # Read every second
 
     except KeyboardInterrupt:
-        print("\nInterrupted by user")
+        logging.info("\nInterrupted by user")
     finally:
         ser.close()
-        print("Serial port closed")
+        logging.info("Serial port closed")
         if client:
             client.loop_stop()
             client.disconnect()
-            print("Disconnected from MQTT")
+            logging.info("Disconnected from MQTT")
 
 if __name__ == "__main__":
     main()
