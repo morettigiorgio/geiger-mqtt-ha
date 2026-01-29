@@ -533,3 +533,8 @@ Much of the code and documentation in this repository is the product of Artifici
 - [Home Assistant MQTT Discovery](https://www.home-assistant.io/docs/mqtt/discovery/)
 - [Paho MQTT Python Client](https://github.com/eclipse/paho.mqtt.python)
 - [this repository](https://github.com/morettigiorgio/geiger-mqtt-ha)
+
+## Support
+If you like my work and want to support me, you can buy me a coffee!
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/K3K21T8I02)
