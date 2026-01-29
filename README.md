@@ -527,7 +527,6 @@ Much of the code and documentation in this repository is the product of Artifici
 ## References
 
 - [GQ RFC1801 Protocol Specification](https://www.gqelectronicsllc.com/download/GQ-RFC1801.txt) - Serial communication protocol for GMC detectors
-- [GQ Electronics GMC Protocol Manual](https://www.gqelectronicsllc.com/comersus/store/products/GMC-500Plus-Kit/Manual%20V5.24.pdf)
 - [GQ Electronics - CFG data Offset table](http://www.gqelectronicsllc.com/forum/topic.asp?TOPIC_ID=4447)
 - [Home Assistant MQTT Integration](https://www.home-assistant.io/integrations/mqtt/)
 - [Home Assistant MQTT Discovery](https://www.home-assistant.io/docs/mqtt/discovery/)
