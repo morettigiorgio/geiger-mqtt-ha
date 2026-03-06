@@ -1,6 +1,6 @@
 # Geiger Detector MQTT Integration
 
-A complete Docker container solution for interfacing with GQ Electronics GMC Geiger counters (e.g., GMC-500+Re, GMC-600+) over serial connection, publishing radiation measurements to MQTT with Home Assistant discovery support.
+A complete Docker container solution for interfacing with GQ Electronics GMC Geiger counters (e.g., GMC-500+Re, GMC-600+) over USB serial connection, publishing radiation measurements to MQTT with Home Assistant discovery support.
 
 ## Features
 
@@ -21,8 +21,8 @@ geiger/
 ├── LICENSE                # MIT License
 ├── README.md              # This file
 ├── Dockerfile             # Container definition
-├── docker-compose.yaml    # Docker Compose configuration
-├── screenshots/           # Integration examples
+├── screenshots/           # HA Integration screenshots
+├── manuals/               # PDF Manuals
 └── app/
     ├── main.py            # Main reader and MQTT publisher
     ├── discovery.py       # Home Assistant MQTT discovery publisher
@@ -71,7 +71,7 @@ Dependencies:
 ### Build from Dockerfile
 
 ```bash
-cd /home/server/docker/data/geiger
+cd /home/user/docker/data/geiger
 docker build -t geiger-detector:latest .
 ```
 
@@ -92,7 +92,7 @@ docker run -d \
   geiger-detector:latest
 ```
 
-### Docker Compose
+### Docker Compose example
 
 ```yaml
 services:
@@ -135,8 +135,6 @@ services:
     restart: unless-stopped
     depends_on:
       - mosquitto
-    networks:
-      - smarthome
 ```
 
 ### Starting and Updating the Container
