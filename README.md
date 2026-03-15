@@ -276,7 +276,7 @@ The container publishes Home Assistant MQTT Discovery messages on startup:
 - **Dose Rate Sensor**: `homeassistant/sensor/geiger-detector-dose_rate/config`
 - **Speaker Switch**: `homeassistant/switch/geiger-detector-speaker/config`
 
-![Home Assistant Integration](screenshots/device.png)
+![Home Assistant Integration](screenshots/device_new.png)
 ![Home Assistant Integration](screenshots/statistic.png)
 
 
