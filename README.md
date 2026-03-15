@@ -258,6 +258,14 @@ Publish: "on" or "off"
 
 **Note**: Speaker control uses RFC1801 commands `SPEAKER1` (on) and `SPEAKER0` (off). Response should be `0xAA`.
 
+### LED Status / Backlight / LCD Contrast Diagnostics
+
+- **LED status**: `geiger/led/state` (`ON` / `OFF`) - binary sensor in Home Assistant
+- **Backlight level**: `geiger/led/backlight` (0-100%)
+- **LCD contrast**: `geiger/led/contrast` (0-100%)
+
+*Backlight and contrast are read from the same `GETCFG` payload. The raw values are 0-10 and are scaled x10 to 0-100.*
+
 ## Home Assistant Integration
 
 ### Automatic Discovery

@@ -47,6 +47,7 @@ MQTT_TOPIC_USVH = os.getenv("MQTT_TOPIC_USVH", "geiger/usvh")
 MQTT_CLIENT_ID = os.getenv("MQTT_CLIENT_ID", "geiger-detector")
 MQTT_PUBLISH_INTERVAL = int(os.getenv("MQTT_PUBLISH_INTERVAL", "1"))  # seconds between MQTT publishes
 MQTT_TOPIC_SPEAKER = os.getenv("MQTT_TOPIC_SPEAKER", "geiger/speaker")  # Topic for speaker control (set/state)
+MQTT_TOPIC_LED = os.getenv("MQTT_TOPIC_LED", "geiger/led")  # Topic for LED status (state)
 
 def validate_cpm(cpm, cpm_history):
     """
@@ -158,7 +159,7 @@ def log_config_details(data):
     for offset, fmt, label in config_map:
         try:
             val = struct.unpack_from(fmt, data, offset)[0]
-            if fmt == "B" and offset <= 2:
+            if fmt == "B" and offset in (0, 1, 2, 60):
                 val = "ON" if val == 1 else "OFF"
             if fmt == ">f":
                 val = round(val, 4)
@@ -253,6 +254,53 @@ def publish_speaker_state(client, state):
     state_payload = "ON" if state else "OFF"
     client.publish(f"{MQTT_TOPIC_SPEAKER}/state", state_payload, qos=1, retain=True)
     logging.info(f"[Speaker] Published initial state: {state_payload}")
+
+
+def get_led_state_from_device(ser):
+    """
+    Retrieve current LED status from device configuration
+    Returns True if LED is enabled, False if disabled, None on error
+    """
+    config_raw = send_cmd(ser, "GETCFG", resp_len=512)
+    if config_raw and len(config_raw) >= 61:
+        led_byte = struct.unpack_from("B", config_raw, 60)[0]
+        return (led_byte == 1)
+    return None
+
+
+def publish_led_state(client, state):
+    """
+    Publish LED state with retain flag
+    """
+    state_payload = "ON" if state else "OFF"
+    client.publish(f"{MQTT_TOPIC_LED}/state", state_payload, qos=1, retain=True)
+    logging.info(f"[LED] Published initial state: {state_payload}")
+
+
+def get_config_byte_from_device(ser, offset, label):
+    """Read a single byte config value from GETCFG by offset."""
+    config_raw = send_cmd(ser, "GETCFG", resp_len=512)
+    if config_raw and len(config_raw) > offset:
+        return struct.unpack_from("B", config_raw, offset)[0]
+    logging.warning(f"[Config] Could not read {label} at offset {offset}")
+    return None
+
+
+def get_backlight_level_from_device(ser):
+    raw = get_config_byte_from_device(ser, 53, "Backlight Level")
+    return None if raw is None else raw * 10
+
+
+def get_lcd_contrast_from_device(ser):
+    raw = get_config_byte_from_device(ser, 48, "LCD Contrast")
+    return None if raw is None else raw * 10
+
+
+def publish_diagnostic_state(client, topic, value, label):
+    """Publish a plain diagnostic value with retain."""
+    client.publish(topic, str(value), qos=1, retain=True)
+    logging.info(f"[{label}] Published state: {value}")
+
 
 def on_log(client, userdata, level, buf):
     py_level = MQTT_LOG_MAP.get(level, logging.INFO)
@@ -349,6 +397,23 @@ def main():
                 logging.info(f"[Init] Speaker state detected: {'ON' if is_speaker_on else 'OFF'}")
             else:
                 logging.warning("[Init] Could not detect initial speaker state")
+
+            # LED state init
+            led_state = get_led_state_from_device(ser)
+            if led_state is not None:
+                publish_led_state(client, led_state)
+                logging.info(f"[Init] LED state detected: {'ON' if led_state else 'OFF'}")
+            else:
+                logging.warning("[Init] Could not detect initial LED state")
+
+            # Backlight and contrast init
+            backlight = get_backlight_level_from_device(ser)
+            if backlight is not None:
+                publish_diagnostic_state(client, f"{MQTT_TOPIC_LED}/backlight", backlight, "Backlight")
+            lcd_contrast = get_lcd_contrast_from_device(ser)
+            if lcd_contrast is not None:
+                publish_diagnostic_state(client, f"{MQTT_TOPIC_LED}/contrast", lcd_contrast, "LCD Contrast")
+
             time.sleep(0.5)
 
 
@@ -396,6 +461,21 @@ def main():
                 if client and (current_time - last_publish_time) >= MQTT_PUBLISH_INTERVAL:
                     publish_sensor(client, MQTT_TOPIC_CPM, cpm, cpm_min, cpm_avg, cpm_max)
                     publish_sensor(client, MQTT_TOPIC_USVH, usvh, usvh_min, usvh_avg, usvh_max)
+
+                    led_state = get_led_state_from_device(ser)
+                    if led_state is not None:
+                        publish_led_state(client, led_state)
+                    else:
+                        logging.warning("[LED] Could not read LED state during periodic update")
+
+                    backlight = get_backlight_level_from_device(ser)
+                    if backlight is not None:
+                        publish_diagnostic_state(client, f"{MQTT_TOPIC_LED}/backlight", backlight, "Backlight")
+
+                    lcd_contrast = get_lcd_contrast_from_device(ser)
+                    if lcd_contrast is not None:
+                        publish_diagnostic_state(client, f"{MQTT_TOPIC_LED}/contrast", lcd_contrast, "LCD Contrast")
+
                     last_publish_time = current_time
             else:
                 logging.info("CPM: no response")

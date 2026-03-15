@@ -101,6 +101,56 @@ def publish_discovery(client):
     client.publish(speaker_topic, json.dumps(speaker_discovery), qos=1, retain=True)
     print(f"[Discovery] Published Speaker switch to: {speaker_topic}")
 
+    # --- BINARY SENSOR LED STATUS ---
+    led_discovery = {
+        "unique_id": f"{DEVICE_ID}_led",
+        "name": "LED Status",
+        "state_topic": "geiger/led/state",
+        "payload_on": "ON",
+        "payload_off": "OFF",
+        "device_class": "power",
+        "icon": "mdi:led-on",
+        "entity_category": "diagnostic",
+        "device": device_info,
+        "platform": "mqtt"
+    }
+
+    led_topic = f"{HA_DISCOVERY_TOPIC_PREFIX}/binary_sensor/{DEVICE_ID}-led/config"
+    client.publish(led_topic, json.dumps(led_discovery), qos=1, retain=True)
+    print(f"[Discovery] Published LED binary sensor to: {led_topic}")
+
+    # --- SENSOR BACKLIGHT LEVEL ---
+    backlight_discovery = {
+        "unique_id": f"{DEVICE_ID}_backlight",
+        "icon": "mdi:brightness-6",
+        "name": "Backlight Level",
+        "state_topic": "geiger/led/backlight",
+        "unit_of_measurement": "%",
+        "state_class": "measurement",
+        "device": device_info,
+        "platform": "mqtt"
+    }
+
+    backlight_topic = f"{HA_DISCOVERY_TOPIC_PREFIX}/sensor/{DEVICE_ID}-backlight/config"
+    client.publish(backlight_topic, json.dumps(backlight_discovery), qos=1, retain=True)
+    print(f"[Discovery] Published Backlight sensor to: {backlight_topic}")
+
+    # --- SENSOR LCD CONTRAST ---
+    contrast_discovery = {
+        "unique_id": f"{DEVICE_ID}_lcd_contrast",
+        "icon": "mdi:contrast",
+        "name": "LCD Contrast",
+        "state_topic": "geiger/led/contrast",
+        "unit_of_measurement": "%",
+        "state_class": "measurement",
+        "device": device_info,
+        "platform": "mqtt"
+    }
+
+    contrast_topic = f"{HA_DISCOVERY_TOPIC_PREFIX}/sensor/{DEVICE_ID}-lcd_contrast/config"
+    client.publish(contrast_topic, json.dumps(contrast_discovery), qos=1, retain=True)
+    print(f"[Discovery] Published LCD Contrast sensor to: {contrast_topic}")
+
 def main():
     # Try VERSION2 first, fallback to default for older paho-mqtt versions
     try:
