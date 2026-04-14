@@ -210,6 +210,8 @@ docker compose down geiger && docker compose up -d geiger
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `LOG_LEVEL` | `INFO` | Logging verbosity (DEBUG, INFO, WARNING, ERROR) |
+| `DEVICE_STABILIZATION_DELAY` | `3` | Seconds to wait for device to stabilize after connection (especially after server restart) |
+| `MAX_CONSECUTIVE_ERRORS` | `10` | Maximum consecutive errors before attempting serial port reconnection |
 
 ## MQTT Topics and Payload
 
@@ -339,6 +341,35 @@ python3 /app/discovery.py
 ```
 
 ## Troubleshooting
+
+### USB Port Issues After Server Restart
+
+**Problem**: After server restart, the container fails to start with serial connection errors because the USB port name changes (e.g., from `/dev/ttyUSB1` to `/dev/ttyUSB0`).
+
+**Solution**: Use stable device paths in your Docker compose:
+
+#### Option 1: Use `/dev/serial/by-id/` (Recommended)
+```yaml
+devices:
+  - "/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0:/dev/ttyUSB0:rw"
+```
+
+This path is stable and doesn't change after reboots. Find your device with:
+```bash
+ls -l /dev/serial/by-id/
+```
+
+#### Option 2: Create udev rule for custom name
+Create `/etc/udev/rules.d/99-geiger.rules`:
+```
+KERNEL=="ttyUSB*", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", SYMLINK+="geiger"
+```
+
+Then use in compose:
+```yaml
+devices:
+  - "/dev/geiger:/dev/ttyUSB0:rw"
+```
 
 ### Container Won't Start
 

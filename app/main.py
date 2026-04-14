@@ -80,27 +80,43 @@ def validate_cpm(cpm, cpm_history):
     
     return True, "OK"
 
-def send_cmd(ser, cmd, resp_len=0, is_ascii=False):
+def send_cmd(ser, cmd, resp_len=0, is_ascii=False, retries=3, retry_delay=0.5):
     """
     Send RFC1801 command to GMC and read response.
     - cmd: command string (e.g. 'GETVER')
     - resp_len: number of expected bytes (0 = no response)
     - is_ascii: if True decode as ASCII
+    - retries: number of retry attempts on failure
+    - retry_delay: delay between retries in seconds
     """
-    with serial_lock:
-        ser.reset_input_buffer()
-        packet = f"<{cmd}>>".encode("ascii")
-        ser.write(packet)
-        time.sleep(0.15)
+    for attempt in range(retries):
+        try:
+            with serial_lock:
+                ser.reset_input_buffer()
+                packet = f"<{cmd}>>".encode("ascii")
+                ser.write(packet)
+                time.sleep(0.15)
 
-        if resp_len <= 0:
+                if resp_len <= 0:
+                    return None
+
+                data = ser.read(resp_len)
+                if not data or len(data) < resp_len:
+                    if attempt < retries - 1:
+                        logging.debug(f"Command {cmd} attempt {attempt+1} failed, retrying...")
+                        time.sleep(retry_delay)
+                        continue
+                    return None
+
+                return data.decode("ascii", errors="ignore").strip() if is_ascii else data
+        except serial.SerialException as e:
+            if attempt < retries - 1:
+                logging.warning(f"Serial error on command {cmd}: {e}, retrying...")
+                time.sleep(retry_delay)
+                continue
+            logging.error(f"Serial error on command {cmd} after {retries} attempts: {e}")
             return None
-
-        data = ser.read(resp_len)
-        if not data or len(data) < resp_len:
-            return None
-
-        return data.decode("ascii", errors="ignore").strip() if is_ascii else data
+    return None
 
 def read_variable_ascii(ser, cmd, timeout=1.0):
     """
@@ -121,8 +137,19 @@ def read_variable_ascii(ser, cmd, timeout=1.0):
         return buffer.decode("ascii", errors="ignore").strip()
 
 def log_config_details(data):
-    if not data or len(data) < 512:
-        logging.error("data is invalid or missing")
+    if not data:
+        logging.error("[Config] No configuration data received from device")
+        logging.error("[Config] Possible causes:")
+        logging.error("  - Device not connected or powered off")
+        logging.error("  - Serial port not accessible")
+        logging.error("  - Device not responding to GETCFG command")
+        return
+    if len(data) < 512:
+        logging.error(f"[Config] Configuration data incomplete: {len(data)} bytes (expected 512)")
+        logging.error("[Config] Possible causes:")
+        logging.error("  - Serial communication error")
+        logging.error("  - Device not fully initialized")
+        logging.error("  - Corrupted data transmission")
         return
 
     # B=1 byte, H=2 byte (Unsigned Short), I=4 byte (Unsigned Int), f=float
@@ -339,7 +366,30 @@ def main():
         client = None
 
     # --- SETUP SERIAL ---
-    ser = serial.Serial(PORT, BAUDRATE, timeout=TIMEOUT)
+    # Retry mechanism for serial connection after server restart
+    max_retries = 5
+    retry_delay = 2.0
+    
+    for attempt in range(max_retries):
+        try:
+            ser = serial.Serial(PORT, BAUDRATE, timeout=TIMEOUT)
+            logging.info(f"Connected to {PORT} @ {BAUDRATE}")
+            break
+        except serial.SerialException as e:
+            if attempt < max_retries - 1:
+                logging.warning(f"Failed to open serial port {PORT} (attempt {attempt+1}/{max_retries}): {e}")
+                logging.info(f"Retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
+                continue
+            else:
+                logging.error(f"[Serial] Failed to open serial port {PORT} after {max_retries} attempts")
+                logging.error("[Serial] Possible causes:")
+                logging.error("  - Port not accessible (check Docker compose device mapping)")
+                logging.error("  - Device not connected or powered off")
+                logging.error("  - Port already in use by another process")
+                logging.error("  - Insufficient permissions")
+                logging.error(f"[Serial] Error details: {e}")
+                return
     
     # Store serial connection in userdata for callbacks
     if client:
@@ -354,7 +404,10 @@ def main():
     
     try:
         logging.info(f"Connected to {PORT} @ {BAUDRATE}")
-        time.sleep(0.5)
+        # Wait longer for device to stabilize after connection (especially after server restart)
+        device_stabilization_delay = int(os.getenv("DEVICE_STABILIZATION_DELAY", "3"))
+        logging.info(f"Waiting {device_stabilization_delay} seconds for device to stabilize...")
+        time.sleep(device_stabilization_delay)
 
         # --- DISABLE HEARTBEAT ---
         logging.info("Disabling heartbeat (HEARTBEAT0)")
@@ -385,7 +438,9 @@ def main():
             logging.info("DateTime: no response")
 
         # --- CONFIG (512 bytes) ---
-        config_raw = send_cmd(ser, "GETCFG", resp_len=512)
+        # Use more retries and longer delay for initial config read
+        logging.info("Reading device configuration...")
+        config_raw = send_cmd(ser, "GETCFG", resp_len=512, retries=5, retry_delay=1.0)
         log_config_details(config_raw)
 
         # --- PUBLISH INITIAL SPEAKER STATE ---
@@ -425,60 +480,100 @@ def main():
         last_publish_time = 0
 
         # --- CONTINUOUS LOOP ---
+        consecutive_errors = 0
+        max_consecutive_errors = int(os.getenv("MAX_CONSECUTIVE_ERRORS", "10"))
+        
         while True:
-            # --- CPM (4 bytes big endian) ---
-            raw_cpm = send_cmd(ser, "GETCPM", resp_len=4)
-            if raw_cpm:
-                cpm = struct.unpack(">I", raw_cpm)[0]
-                
-                # Validate CPM reading (before adding to history)
-                is_valid, reason = validate_cpm(cpm, cpm_history)
-                if not is_valid:
-                    logging.warning(f"[WARN] Rejected CPM {cpm:>10d}: {reason}")
-                    time.sleep(1)
-                    continue
-                
-                # Calculate µSv/h
-                usvh = round(cpm / CPM_TO_USVH, 4)
-                
-                # Add to history buffers
-                cpm_history.append(cpm)
-                usvh_history.append(usvh)
-                
-                # Calculate min, average, and max
-                cpm_min = min(cpm_history) if cpm_history else 0
-                cpm_avg = round(sum(cpm_history) / len(cpm_history), 2) if cpm_history else 0
-                cpm_max = max(cpm_history) if cpm_history else 0
-                usvh_min = round(min(usvh_history), 4) if usvh_history else 0
-                usvh_avg = round(sum(usvh_history) / len(usvh_history), 4) if usvh_history else 0
-                usvh_max = round(max(usvh_history), 4) if usvh_history else 0
-                
-                logging.info(f"CPM: {cpm:6d} ({cpm_min:6d}, {cpm_avg:6.2f}, {cpm_max:6d}) | "
-                      f"µSv/h: {usvh:.4f} ({usvh_min:.4f}, {usvh_avg:.4f}, {usvh_max:.4f})")
-                
-                # --- PUBLISH TO MQTT (if interval elapsed) ---
-                current_time = time.time()
-                if client and (current_time - last_publish_time) >= MQTT_PUBLISH_INTERVAL:
-                    publish_sensor(client, MQTT_TOPIC_CPM, cpm, cpm_min, cpm_avg, cpm_max)
-                    publish_sensor(client, MQTT_TOPIC_USVH, usvh, usvh_min, usvh_avg, usvh_max)
+            try:
+                # --- CPM (4 bytes big endian) ---
+                raw_cpm = send_cmd(ser, "GETCPM", resp_len=4)
+                if raw_cpm:
+                    consecutive_errors = 0  # Reset error counter on success
+                    cpm = struct.unpack(">I", raw_cpm)[0]
+                    
+                    # Validate CPM reading (before adding to history)
+                    is_valid, reason = validate_cpm(cpm, cpm_history)
+                    if not is_valid:
+                        logging.warning(f"[WARN] Rejected CPM {cpm:>10d}: {reason}")
+                        time.sleep(1)
+                        continue
+                    
+                    # Calculate µSv/h
+                    usvh = round(cpm / CPM_TO_USVH, 4)
+                    
+                    # Add to history buffers
+                    cpm_history.append(cpm)
+                    usvh_history.append(usvh)
+                    
+                    # Calculate min, average, and max
+                    cpm_min = min(cpm_history) if cpm_history else 0
+                    cpm_avg = round(sum(cpm_history) / len(cpm_history), 2) if cpm_history else 0
+                    cpm_max = max(cpm_history) if cpm_history else 0
+                    usvh_min = round(min(usvh_history), 4) if usvh_history else 0
+                    usvh_avg = round(sum(usvh_history) / len(usvh_history), 4) if usvh_history else 0
+                    usvh_max = round(max(usvh_history), 4) if usvh_history else 0
+                    
+                    logging.info(f"CPM: {cpm:6d} ({cpm_min:6d}, {cpm_avg:6.2f}, {cpm_max:6d}) | "
+                          f"µSv/h: {usvh:.4f} ({usvh_min:.4f}, {usvh_avg:.4f}, {usvh_max:.4f})")
+                    
+                    # --- PUBLISH TO MQTT (if interval elapsed) ---
+                    current_time = time.time()
+                    if client and (current_time - last_publish_time) >= MQTT_PUBLISH_INTERVAL:
+                        publish_sensor(client, MQTT_TOPIC_CPM, cpm, cpm_min, cpm_avg, cpm_max)
+                        publish_sensor(client, MQTT_TOPIC_USVH, usvh, usvh_min, usvh_avg, usvh_max)
 
-                    led_state = get_led_state_from_device(ser)
-                    if led_state is not None:
-                        publish_led_state(client, led_state)
-                    else:
-                        logging.warning("[LED] Could not read LED state during periodic update")
+                        led_state = get_led_state_from_device(ser)
+                        if led_state is not None:
+                            publish_led_state(client, led_state)
+                        else:
+                            logging.warning("[LED] Could not read LED state during periodic update")
 
-                    backlight = get_backlight_level_from_device(ser)
-                    if backlight is not None:
-                        publish_diagnostic_state(client, f"{MQTT_TOPIC_LED}/backlight", backlight, "Backlight")
+                        backlight = get_backlight_level_from_device(ser)
+                        if backlight is not None:
+                            publish_diagnostic_state(client, f"{MQTT_TOPIC_LED}/backlight", backlight, "Backlight")
 
-                    lcd_contrast = get_lcd_contrast_from_device(ser)
-                    if lcd_contrast is not None:
-                        publish_diagnostic_state(client, f"{MQTT_TOPIC_LED}/contrast", lcd_contrast, "LCD Contrast")
+                        lcd_contrast = get_lcd_contrast_from_device(ser)
+                        if lcd_contrast is not None:
+                            publish_diagnostic_state(client, f"{MQTT_TOPIC_LED}/contrast", lcd_contrast, "LCD Contrast")
 
-                    last_publish_time = current_time
-            else:
-                logging.info("CPM: no response")
+                        last_publish_time = current_time
+                else:
+                    consecutive_errors += 1
+                    logging.info(f"CPM: no response (consecutive errors: {consecutive_errors}/{max_consecutive_errors})")
+                    
+                    # Check if we should attempt reconnection
+                    if consecutive_errors >= max_consecutive_errors:
+                        logging.warning(f"Too many consecutive errors ({consecutive_errors}), attempting to reopen serial port...")
+                        try:
+                            ser.close()
+                        except:
+                            pass
+                        time.sleep(2)
+                        
+                        # Try to reopen serial port
+                        for attempt in range(3):
+                            try:
+                                ser = serial.Serial(PORT, BAUDRATE, timeout=TIMEOUT)
+                                logging.info(f"Reconnected to {PORT} @ {BAUDRATE}")
+                                consecutive_errors = 0
+                                # Wait for device to stabilize
+                                time.sleep(2)
+                                break
+                            except serial.SerialException as e:
+                                if attempt < 2:
+                                    logging.warning(f"Reconnection attempt {attempt+1}/3 failed: {e}")
+                                    time.sleep(2)
+                                else:
+                                    logging.error(f"Failed to reconnect after 3 attempts: {e}")
+                                    raise
+
+            except serial.SerialException as e:
+                consecutive_errors += 1
+                logging.error(f"Serial error: {e} (consecutive errors: {consecutive_errors})")
+                if consecutive_errors >= max_consecutive_errors:
+                    logging.error("Too many serial errors, exiting...")
+                    raise
+                time.sleep(2)
 
             time.sleep(1)  # Read every second
 
